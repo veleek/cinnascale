@@ -1,0 +1,8 @@
+adafruit_pixelbuf==2.0.0
+neopixel==6.3.8
+adafruit_requests==1.13.2
+cedargrove_nau7802==1.7.0
+adafruit_ticks==1.0.10
+adafruit_bus_device==5.2.4
+adafruit_register==1.9.15
+asyncio==0.5.20
