@@ -23,7 +23,7 @@ A network connected kitchen scale that uses a QT Py ESP32-S3 to measure the cat'
 
 * Create a `secrets.py` with your WiFi credentials, Home Assistant URL and [Long Lived Access Token]
 
-  ```jsonc
+  ```python
   secrets = {
     "ssid": "<WiFi SSID>",
     "password": "<WiFi Password>",

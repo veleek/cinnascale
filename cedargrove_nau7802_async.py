@@ -331,8 +331,22 @@ class NAU7802:
         sample_count = samples
         while sample_count > 0:
             while not self.available():
-                await asyncio.sleep(0) # Let us play nice with anything else async
+                await asyncio.sleep(0)  # Let us play nice with anything else async
                 pass
             sample_sum = sample_sum + self.read()
             sample_count -= 1
         return int(sample_sum / samples)
+
+    async def read_raw_values(self, samples=2):
+        """Read consecutive raw sample values. Return list of raw values."""
+        sample_values = []
+
+        sample_count = samples
+        while sample_count > 0:
+            while not self.available():
+                await asyncio.sleep(0)
+                pass
+            sample_values.append(self.read())
+            sample_count -= 1
+
+        return sample_values
