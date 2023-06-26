@@ -17,6 +17,17 @@ async def blink(delay: float, colorMask: int):
         await asyncio.sleep(delay)
 
 
+async def blink_n(delay: float, colorMask: int, n: int):
+    global color, pixels
+    for i in range(n):
+        color = color ^ colorMask
+        pixels.fill(color)
+        await asyncio.sleep(delay)
+        color = color & ~colorMask
+        pixels.fill(color)
+        await asyncio.sleep(delay)
+
+
 async def fade():
     global pixels
     brightness: float = 0

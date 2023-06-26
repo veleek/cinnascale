@@ -1,9 +1,15 @@
 import asyncio
+import os
 import board
+import microcontroller
 import digitalio
 import traceback
+import supervisor
+import time
+import alarm
+import wifi
 
-from led import blink, pixels
+from led import blink, pixels, blink_n
 from scale import init_scale, read_weight_with_validation, tare
 from network import init_network, CinnaBinarySensor, CinnaSensor
 
@@ -16,36 +22,35 @@ print("=================================================")
 print()
 
 
+def get_button(pin: microcontroller.Pin) -> digitalio.DigitalInOut:
+    button = digitalio.DigitalInOut(pin)
+    button.switch_to_input(pull=digitalio.Pull.UP)
+    return button
+
+
+boot_button = get_button(board.BUTTON)
+unit_button = get_button(board.MOSI)
+tare_button = get_button(board.MISO)
+off_button = get_button(board.SCK)
+
+taring: bool = False
+
 async def main():
-    pixels.fill(0x000033)
-    await asyncio.sleep(0.2)
-    pixels.fill(0x000000)
-    await asyncio.sleep(0.2)
-    pixels.fill(0x000033)
+    await blink_n(0.2, 0x000033, 3)
 
     await asyncio.gather(init_network(), init_scale())
 
+    await blink_n(0.1, 0x110033, 3)
+
     while True:
         try:
-            pixels.fill(0x003300)
-            await asyncio.sleep(0.1)
-            pixels.fill(0x000000)
-            await asyncio.sleep(0.1)
-            pixels.fill(0x003300)
-            await asyncio.sleep(0.1)
-            pixels.fill(0x000000)
-            await asyncio.sleep(0.1)
-            pixels.fill(0x003300)
-            await asyncio.sleep(0.1)
-            pixels.fill(0x000000)
-            await asyncio.sleep(0.1)
-
             await asyncio.gather(
                 weigh(),
                 # asyncio.create_task(blink(0.1, 0xFF0000))
                 # asyncio.create_task(blink(5, 0x00FF00))
-                asyncio.create_task(blink(1.0, 0x000001))
+                blink(1.0, 0x000001),
                 # asyncio.create_task(fade())
+                watch_buttons(),
             )
         except RuntimeError as re:
             # Check if the cause of the exception was an OSError with EHOSTUNREACH
@@ -61,9 +66,29 @@ async def main():
                 raise
 
 
+async def watch_buttons():
+    global off_button, tare_button, taring
+
+    while True:
+        await asyncio.sleep(0.0)
+
+        if not off_button.value:
+            print("Shutting down...")
+            await blink_n(0.05, 0x226600, 10)
+            supervisor.reload()
+
+        if not tare_button.value:
+            print("Taring...")
+            taring = True
+            await blink_n(0.05, 0x441133, 20)
+            # Cheap debounce so we don't tare a whole bunch of times.
+            await asyncio.sleep(5)
+            # await tare()
+            taring = False
+
+
 async def weigh_test():
-    tare_button = digitalio.DigitalInOut(board.BUTTON)
-    tare_button.switch_to_input(pull=digitalio.Pull.UP)
+    global tare_button
 
     while True:
         if not tare_button.value:
@@ -83,8 +108,7 @@ async def weigh_test():
 
 
 async def weigh():
-    tare_button = digitalio.DigitalInOut(board.BUTTON)
-    tare_button.switch_to_input(pull=digitalio.Pull.UP)
+    global taring
 
     weight_sensor = CinnaSensor(
         "cinnascale", "CinnaScale", "weight", "mdi:scale", "measurement", "g"
@@ -93,13 +117,18 @@ async def weigh():
     unstable_sensor = CinnaBinarySensor(
         "cinnascale_unstable", "CinnaScale Unstable", "vibration"
     )
+    connection_strength_sensor = CinnaSensor(
+        "cinnascale_connection_strength", "CinnaScale Connection Strength", "signal_strength", "mdi:wifi"
+    )
 
     while True:
-        if not tare_button.value:
-            await tare()
+        if taring:
+            await asyncio.sleep(1)
             continue
 
         next_delay = 60  # seconds
+
+        connection_strength_sensor.update(wifi.radio.ap_info.rssi)
 
         success, result = await try_weigh()
 
@@ -116,13 +145,15 @@ async def weigh():
         # print("\b" * len(output), end="")
         # await asyncio.sleep(5)
 
+        # print("Sleeping a bit...")
         # print(output)
         # timeAlarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + next_delay)
         # alarm.light_sleep_until_alarms(timeAlarm)
 
-        print("Sleeping a bit...")
-        await asyncio.sleep(2)
-        print("Done sleeping.")
+        await asyncio.sleep(next_delay)
+        # await asyncio.sleep(2)
+        # print("Network: {} RSSI: {}".format(wifi.radio.ap_info.ssid, wifi.radio.ap_info.rssi))
+        # print("Done sleeping.")
 
 
 async def try_weigh() -> tuple[bool, float]:
