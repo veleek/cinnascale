@@ -35,6 +35,7 @@ off_button = get_button(board.SCK)
 
 taring: bool = False
 
+
 async def main():
     await blink_n(0.2, 0x000033, 3)
 
@@ -46,10 +47,7 @@ async def main():
         try:
             await asyncio.gather(
                 weigh(),
-                # asyncio.create_task(blink(0.1, 0xFF0000))
-                # asyncio.create_task(blink(5, 0x00FF00))
                 blink(1.0, 0x000001),
-                # asyncio.create_task(fade())
                 watch_buttons(),
             )
         except RuntimeError as re:
@@ -83,7 +81,7 @@ async def watch_buttons():
             await blink_n(0.05, 0x441133, 20)
             # Cheap debounce so we don't tare a whole bunch of times.
             await asyncio.sleep(5)
-            # await tare()
+            await tare()
             taring = False
 
 
@@ -173,6 +171,4 @@ except Exception as e:
     traceback.print_exception(e)
 
     print("Soft resetting...")
-    import supervisor
-
     supervisor.reload()
