@@ -2,12 +2,13 @@
     "python.languageServer": "Pylance",
     "python.linting.pylintEnabled": false,
     "python.analysis.diagnosticSeverityOverrides": {
-        "reportMissingModuleSource": "none"
+        "reportMissingModuleSource": "none",
+        "reportShadowedImports": "none"
     },
     "python.analysis.extraPaths": [
         "c:\\Users\\veleek\\.vscode\\extensions\\joedevivo.vscode-circuitpython-0.1.20-win32-x64\\boards\\0x239A\\0x811A",
         "c:\\Users\\veleek\\.vscode\\extensions\\joedevivo.vscode-circuitpython-0.1.20-win32-x64\\stubs",
-        "c:\\Users\\veleek\\AppData\\Roaming\\Code\\User\\globalStorage\\joedevivo.vscode-circuitpython\\bundle\\20230625\\adafruit-circuitpython-bundle-py-20230625\\lib"
+        "c:\\Users\\veleek\\AppData\\Roaming\\Code\\User\\globalStorage\\joedevivo.vscode-circuitpython\\bundle\\20230626\\adafruit-circuitpython-bundle-py-20230626\\lib"
     ],
     "python.linting.flake8Args": [
         "--max-line-length=120",
