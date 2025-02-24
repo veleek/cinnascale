@@ -35,7 +35,6 @@ off_button = get_button(board.SCK)
 
 taring: bool = False
 
-
 async def main():
     await blink_n(0.2, 0x000033, 3)
 
@@ -47,7 +46,7 @@ async def main():
         try:
             await asyncio.gather(
                 weigh(),
-                blink(1.0, 0x000001),
+                blink(1.0, 0x000005),
                 watch_buttons(),
             )
         except RuntimeError as re:
@@ -71,7 +70,7 @@ async def watch_buttons():
         await asyncio.sleep(0.0)
 
         if not off_button.value:
-            print("Shutting down...")
+            print("Manual restart...")
             await blink_n(0.05, 0x226600, 10)
             supervisor.reload()
 
@@ -84,25 +83,36 @@ async def watch_buttons():
             await tare()
             taring = False
 
+        if not unit_button.value:
+            print("Measuring...")
+            taring = True
+            await asyncio.sleep(2)
+            weigh_once()
+            taring = False
 
-async def weigh_test():
-    global tare_button
 
-    while True:
-        if not tare_button.value:
-            await tare()
-            continue
+async def weigh_once():
+    weight_sensor = CinnaSensor(
+        "cinnascale", "CinnaScale", "weight", "mdi:scale", "measurement", "g"
+    )
+    empty_sensor = CinnaBinarySensor("cinnascale_empty", "CinnaScale Empty", "battery")
+    unstable_sensor = CinnaBinarySensor(
+        "cinnascale_unstable", "CinnaScale Unstable", "vibration"
+    )
+    connection_strength_sensor = CinnaSensor(
+        "cinnascale_connection_strength", "CinnaScale Connection Strength", "signal_strength", "mdi:wifi"
+    )
 
-        success, result = await try_weigh()
+    connection_strength_sensor.update(wifi.radio.ap_info.rssi)
 
-        if success:
-            output = "Got result: {0:10}".format(result)
-        else:
-            output = "Unstable                  "
+    success, result = await try_weigh()
 
-        print(output, end="")
-        print("\b" * len(output), end="")
-        await asyncio.sleep(1)
+    if success:
+        weight_sensor.update(result)
+        empty_sensor.update(result < 10)
+        unstable_sensor.update(False)
+    else:
+        unstable_sensor.update(True)
 
 
 async def weigh():
@@ -171,4 +181,6 @@ except Exception as e:
     traceback.print_exception(e)
 
     print("Soft resetting...")
+
+    import supervisor
     supervisor.reload()
