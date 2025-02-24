@@ -1,17 +1,13 @@
 import asyncio
-import os
 import board
 import microcontroller
 import digitalio
 import traceback
 import supervisor
-import time
-import alarm
-import wifi
 
 from led import blink, pixels, blink_n
 from scale import init_scale, read_weight_with_validation, tare
-from network import init_network, CinnaBinarySensor, CinnaSensor
+from network import init_network, CinnaScaleDevice, CinnaBinarySensor, CinnaSensor
 
 EHOSTUNREACH = 118
 
@@ -34,6 +30,9 @@ tare_button = get_button(board.MISO)
 off_button = get_button(board.SCK)
 
 taring: bool = False
+trigger_weigh_event = asyncio.Event()
+scale_device = CinnaScaleDevice()
+
 
 async def main():
     await blink_n(0.2, 0x000033, 3)
@@ -45,7 +44,7 @@ async def main():
     while True:
         try:
             await asyncio.gather(
-                weigh(),
+                weigh(trigger_weigh_event),
                 blink(1.0, 0x000005),
                 watch_buttons(),
             )
@@ -64,7 +63,7 @@ async def main():
 
 
 async def watch_buttons():
-    global off_button, tare_button, taring
+    global off_button, tare_button, taring, trigger_weigh_event
 
     while True:
         await asyncio.sleep(0.0)
@@ -84,50 +83,24 @@ async def watch_buttons():
             taring = False
 
         if not unit_button.value:
-            print("Measuring...")
-            taring = True
+            print("Measurement requested.")
             await asyncio.sleep(2)
-            weigh_once()
-            taring = False
+            # Set this event which should cause the weigh loop to immediately restart
+            print("Triggering measurement...")
+            trigger_weigh_event.set()
 
 
-async def weigh_once():
-    weight_sensor = CinnaSensor(
-        "cinnascale", "CinnaScale", "weight", "mdi:scale", "measurement", "g"
-    )
-    empty_sensor = CinnaBinarySensor("cinnascale_empty", "CinnaScale Empty", "battery")
-    unstable_sensor = CinnaBinarySensor(
-        "cinnascale_unstable", "CinnaScale Unstable", "vibration"
-    )
-    connection_strength_sensor = CinnaSensor(
-        "cinnascale_connection_strength", "CinnaScale Connection Strength", "signal_strength", "mdi:wifi"
-    )
+async def weigh_once() -> bool:
+    global scale_device
 
-    connection_strength_sensor.update(wifi.radio.ap_info.rssi)
-
+    scale_device.record_connection_strength()
     success, result = await try_weigh()
-
-    if success:
-        weight_sensor.update(result)
-        empty_sensor.update(result < 10)
-        unstable_sensor.update(False)
-    else:
-        unstable_sensor.update(True)
+    scale_device.record_weight(success, result)
+    return success
 
 
-async def weigh():
-    global taring
-
-    weight_sensor = CinnaSensor(
-        "cinnascale", "CinnaScale", "weight", "mdi:scale", "measurement", "g"
-    )
-    empty_sensor = CinnaBinarySensor("cinnascale_empty", "CinnaScale Empty", "battery")
-    unstable_sensor = CinnaBinarySensor(
-        "cinnascale_unstable", "CinnaScale Unstable", "vibration"
-    )
-    connection_strength_sensor = CinnaSensor(
-        "cinnascale_connection_strength", "CinnaScale Connection Strength", "signal_strength", "mdi:wifi"
-    )
+async def weigh(trigger_weigh_event: asyncio.Event):
+    global taring, scale_device
 
     while True:
         if taring:
@@ -136,32 +109,13 @@ async def weigh():
 
         next_delay = 60  # seconds
 
-        connection_strength_sensor.update(wifi.radio.ap_info.rssi)
+        if not await weigh_once():
+            # If we failed to weigh because we were unstable, then try again more quickly.
+            next_delay = 5  # seconds
 
-        success, result = await try_weigh()
-
-        if success:
-            weight_sensor.update(result)
-            empty_sensor.update(result < 10)
-            unstable_sensor.update(False)
-        else:
-            unstable_sensor.update(True)
-            next_delay = 5
-
-        # output = "Got result: {0:10}".format(result)
-        # print(output, end="")
-        # print("\b" * len(output), end="")
-        # await asyncio.sleep(5)
-
-        # print("Sleeping a bit...")
-        # print(output)
-        # timeAlarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + next_delay)
-        # alarm.light_sleep_until_alarms(timeAlarm)
-
-        await asyncio.sleep(next_delay)
-        # await asyncio.sleep(2)
-        # print("Network: {} RSSI: {}".format(wifi.radio.ap_info.ssid, wifi.radio.ap_info.rssi))
-        # print("Done sleeping.")
+        # If we happen to have been triggered right after we completed a report, we'll skip it.
+        trigger_weigh_event.clear()
+        await cancellable_sleep(next_delay, trigger_weigh_event)
 
 
 async def try_weigh() -> tuple[bool, float]:
@@ -169,9 +123,24 @@ async def try_weigh() -> tuple[bool, float]:
         result = await read_weight_with_validation()
         return True, result
     except ValueError:
-        # print("Scale is not stable.  Trying again later.")
         # We got a value error which means that the scale is not stable just skip this reading and try again later
         return False, 0.0
+
+
+async def cancellable_sleep(delay: float, cancel_event: asyncio.Event):
+    '''
+    Sleep for the given delay duration while waiting for the provided event to be set.  If the event is set we will
+    cancel the sleep early.
+    '''
+    try:
+        await asyncio.wait_for(cancel_event.wait(), timeout=delay)
+    except asyncio.CancelledError:
+        if cancel_event.is_set():
+            print("Sleep was cancelled.")
+            cancel_event.clear()
+    except asyncio.TimeoutError:
+        # print("Timeout elapsed.  This is expected")
+        pass
 
 
 try:
@@ -182,5 +151,5 @@ except Exception as e:
 
     print("Soft resetting...")
 
-    import supervisor
+    # import supervisor
     supervisor.reload()

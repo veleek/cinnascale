@@ -42,6 +42,7 @@ async def init_scale() -> NAU7802:
 
 
 def convert_to_grams(raw: int) -> float:
+    # These values are specific to my scale.
     # ZERO = 546562
     # 45G = 633114
     # SLOPE = TEST_WEIGHT - ZERO_WEIGHT / 45
@@ -70,6 +71,11 @@ async def read_weight() -> float:
 
 
 async def read_weight_with_validation() -> float:
+    '''
+    Attempts to read a weight from the scale.  This  will gather five separate measurements, discard the highest and the
+    lowest, and average the remaining values.  If the difference between any value and the average is greater than 1% then a
+    ValueError will be raised.  Otherwise the value in grams will be returned.
+    '''
     global scale, tare_weight
 
     values = await scale.read_raw_values(5)

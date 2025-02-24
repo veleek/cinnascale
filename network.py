@@ -40,6 +40,10 @@ class BaseCinnaSensor:
             "device_class": device_class,
             "icon": icon,
         }
+        self.headers = {
+            "Authorization": "Bearer " + secrets["token"],
+            "Content-Type": "application/json",
+        }
 
     @property
     def sensor_name(self):
@@ -47,35 +51,29 @@ class BaseCinnaSensor:
 
     def update(self, value: int):
         if self.value == value:
-            print("Value for {} unchanged, skipping update".format(self.sensor_name))
+            print(f"[{self.sensor_name}] Value unchanged, skipping update")
             return
-
-        headers = {
-            "Authorization": "Bearer " + secrets["token"],
-            "Content-Type": "application/json",
-        }
 
         data = {"state": value, "attributes": self.attributes}
 
-        print("Updating {} value to {}... ".format(self.sensor_name, value), end="")
+        print(f"[{self.sensor_name}] Updating to {value}... ", end="")
 
-        url = "{}/api/states/{}".format(HASS_URL, self.sensor_name)
+        url = f"{HASS_URL}/api/states/{self.sensor_name}"
 
         global requests
         try:
-            response = requests.post(url, json=data, headers=headers, timeout=2)
+            response = requests.post(url, json=data, headers=self.headers, timeout=2)
         except adafruit_requests.OutOfRetries as oor:
-            print(
-                "Failed to update {} value.  Out of retries.".format(self.sensor_name)
-            )
+            print("Update failed.  Out of retries.")
             traceback.print_exception(oor)
             return
             # raise CinnaScaleError("Failed to update {} value".format(self.sensor_name)) from e
 
         if response.status_code < 200 or response.status_code >= 300:
-            print("Unexpected response code {}".format(response.status_code))
+            print(f"Unexpected status code {response.status_code}")
         else:
-            print("Success! Status: {}".format(response.status_code))
+            self.value = value
+            print(f"Success! Status: {response.status_code}")
 
 
 class CinnaBinarySensor(BaseCinnaSensor):
@@ -103,6 +101,32 @@ class CinnaSensor(BaseCinnaSensor):
         self.sensor_type = "sensor"
         self.attributes["state_class"] = state_class
         self.attributes["unit_of_measurement"] = unit_of_measurement
+
+
+class CinnaScaleDevice():
+    SENSOR_NAME = "cinnascale"
+    FRIENDLY_NAME = "CinnaScale"
+    EMPTY_THRESHOLD = 10
+
+    def __init__(self):
+        self.weight_sensor = CinnaSensor(f"{self.SENSOR_NAME}", f"{self.FRIENDLY_NAME}", "weight", "mdi:scale", "measurement", "g")
+        self.empty_sensor = CinnaBinarySensor(f"{self.SENSOR_NAME}_empty", f"{self.FRIENDLY_NAME} Empty", "battery")
+        self.unstable_sensor = CinnaBinarySensor(f"{self.SENSOR_NAME}_unstable", f"{self.FRIENDLY_NAME} Unstable", "vibration")
+        self.connection_strength_sensor = CinnaSensor(f"{self.SENSOR_NAME}_connection_strength", f"{self.FRIENDLY_NAME} Connection Strength", "signal_strength", "mdi:wifi")
+
+    # Record the current WIFI signal strength.  We do this separately from the updating of any other sensors because we
+    # want to record this whenever possible and avoid potential issues with the scale updated so that we have some data
+    # point that indicates that we're still connected.
+    def record_connection_strength(self):
+        self.connection_strength_sensor.update(wifi.radio.ap_info.rssi)
+
+    def record_weight(self, success: bool, weight: int):
+        if success:
+            self.weight_sensor.update(weight)
+            self.empty_sensor.update(weight < self.EMPTY_THRESHOLD)
+            self.unstable_sensor.update(False)
+        else:
+            self.unstable_sensor.update(True)
 
 
 async def init_network() -> None:
