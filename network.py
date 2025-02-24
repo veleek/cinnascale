@@ -49,14 +49,15 @@ class BaseCinnaSensor:
     def sensor_name(self):
         return self.sensor_type + "." + self.name
 
-    def update(self, value: int):
-        if self.value == value:
-            print(f"[{self.sensor_name}] Value unchanged, skipping update")
+    def update(self, value: int, force: bool = False):
+        if not force and self.value == value:
+            print(f"[{self.sensor_name}] Value ({value}) unchanged, skipping update")
             return
 
         data = {"state": value, "attributes": self.attributes}
 
-        print(f"[{self.sensor_name}] Updating to {value}... ", end="")
+        update_message = "Force updating" if force else "Updating"
+        print(f"[{self.sensor_name}] {update_message} to {value}... ", end="")
 
         url = f"{HASS_URL}/api/states/{self.sensor_name}"
 
@@ -118,7 +119,7 @@ class CinnaScaleDevice():
     # want to record this whenever possible and avoid potential issues with the scale updated so that we have some data
     # point that indicates that we're still connected.
     def record_connection_strength(self):
-        self.connection_strength_sensor.update(wifi.radio.ap_info.rssi)
+        self.connection_strength_sensor.update(wifi.radio.ap_info.rssi, True)
 
     def record_weight(self, success: bool, weight: int):
         if success:
