@@ -20,8 +20,6 @@ async def init_scale() -> NAU7802:
     scale = await NAU7802.create_async(i2c, address=0x2A, active_channels=1)
     # scale.gain = 2
 
-    # await scale.zero_channel()
-
     internal_calibrated = await scale.calibrate_async("INTERNAL")
     if not internal_calibrated:
         raise RuntimeError("Unable to calibrate NAU7802 internal")
