@@ -140,7 +140,7 @@ async def init_network() -> bool:
     wifi.radio.hostname = "CinnaScale"
 
     if wifi.radio.connected:
-        print(f"Already connected to WiFi {wifi.radio.ap_info.ssid} (RSSI: {wifi.radio.ap_info.rssi})")
+        print("Already connected to WiFi {} (RSSI: {})".format(wifi.radio.ap_info.ssid, wifi.radio.ap_info.rssi))
     else:
         mac_address = "f4:12:fa:8d:e9:cc"
         wifi.radio.mac_address = binascii.unhexlify(mac_address.replace(":", ""))
