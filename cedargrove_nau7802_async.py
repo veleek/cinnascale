@@ -33,18 +33,16 @@ Implementation Notes
 * Adafruit's Register library: https://github.com/adafruit/Adafruit_CircuitPython_Register
 """
 
-import time
-import struct
 import asyncio
+import struct
+import time
 
 from adafruit_bus_device.i2c_device import I2CDevice
-from adafruit_register.i2c_struct import ROUnaryStruct
+from adafruit_register.i2c_bit import ROBit, RWBit
 
 # from adafruit_register.i2c_struct   import UnaryStruct
-from adafruit_register.i2c_bits import RWBits
-from adafruit_register.i2c_bits import ROBits
-from adafruit_register.i2c_bit import RWBit
-from adafruit_register.i2c_bit import ROBit
+from adafruit_register.i2c_bits import ROBits, RWBits
+from adafruit_register.i2c_struct import ROUnaryStruct
 
 __version__ = "0.0.0+auto.0"
 __repo__ = "https://github.com/veleek/CircuitPython_NAU7802_Async.git"
