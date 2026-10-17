@@ -16,20 +16,17 @@ async def init_scale() -> NAU7802:
     # Instantiate NAU7802 ADC
     print("Initializing scale... ", end="")
     i2c = board.STEMMA_I2C()
-    scale: NAU7802 = NAU7802(i2c, address=0x2A, active_channels=1)
+    # create_async resets and enables the ADC and raises if either fails.
+    scale = await NAU7802.create_async(i2c, address=0x2A, active_channels=1)
     # scale.gain = 2
-
-    enabled = await scale.enable()
-    if not enabled:
-        raise RuntimeError("Unable to enable NAU7802 ADC")
 
     # await scale.zero_channel()
 
-    internal_calibrated = await scale.calibrate("INTERNAL")
+    internal_calibrated = await scale.calibrate_async("INTERNAL")
     if not internal_calibrated:
         raise RuntimeError("Unable to calibrate NAU7802 internal")
 
-    # offset_calibrated = await scale.calibrate("OFFSET")
+    # offset_calibrated = await scale.calibrate_async("OFFSET")
     # if not offset_calibrated:
     #     raise RuntimeError("Unable to calibrate NAU7802 offset")
 
@@ -65,7 +62,7 @@ def convert_to_grams(raw: int) -> float:
 async def read_weight() -> float:
     global scale, tare_weight
 
-    raw = await scale.read_raw_value(3)
+    raw = await scale.read_async(3)
 
     return convert_to_grams(raw)
 
@@ -78,7 +75,7 @@ async def read_weight_with_validation() -> float:
     '''
     global scale, tare_weight
 
-    values = await scale.read_raw_values(5)
+    values = await scale.read_values_async(5)
 
     if len(values) < 3:
         raise ValueError("At least three values are required")
@@ -87,9 +84,9 @@ async def read_weight_with_validation() -> float:
     trimmed_values = sorted_values[1:-1]
     avg = sum(trimmed_values) / len(trimmed_values)
     for value in trimmed_values:
-        if abs(value - avg) > 0.01 * avg:
+        if abs(value - avg) > 0.01 * abs(avg):
             raise ValueError(
-                "Value {} is more than 10% different than the average".format(value)
+                "Value {} is more than 1% different than the average".format(value)
             )
 
     return convert_to_grams(avg)
@@ -98,7 +95,7 @@ async def read_weight_with_validation() -> float:
 async def tare():
     global scale, tare_weight
     print("Taring scale... ", end="")
-    raw = await scale.read_raw_value(20)
+    raw = await scale.read_async(20)
     tare_weight = raw
     save_tare_weight()
     print("Done!")
