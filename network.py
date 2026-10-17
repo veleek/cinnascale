@@ -142,9 +142,8 @@ async def init_network() -> bool:
     if wifi.radio.connected:
         print("Already connected to WiFi {} (RSSI: {})".format(wifi.radio.ap_info.ssid, wifi.radio.ap_info.rssi))
     else:
-        # old_mac = ['0xf4', '0x12', '0xfa', '0x8d', '0x9e', '0xdc']
-        new_mac = "f4:12:fa:8d:e9:cc"
-        wifi.radio.mac_address = binascii.unhexlify(new_mac.replace(":", ""))
+        mac_address = "f4:12:fa:8d:e9:cc"
+        wifi.radio.mac_address = binascii.unhexlify(mac_address.replace(":", ""))
         print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
 
         show_network_strength(secrets["ssid"])
