@@ -320,19 +320,27 @@ class NAU7802:
         self._adc_out = value / 128  # Restore to 24-bit signed integer value
         return self._adc_out
 
+    @staticmethod
+    def _timed_out(start, timeout):
+        """True once timeout seconds have passed since start. A negative timeout
+        (e.g. -1) never expires; a timeout of 0 expires immediately."""
+        return timeout >= 0 and time.monotonic() - start >= timeout
+
     async def wait_available_async(self, timeout=1.0):
         """Wait for ADC data to be available. Raises RuntimeError if no data is
         ready within timeout seconds (e.g. the device stopped responding or was
-        reset by a brownout) instead of waiting forever."""
+        reset by a brownout) instead of waiting forever. Use a timeout of 0 to
+        raise unless data is available immediately, or -1 to wait forever."""
         start_check = time.monotonic()
         while not self.available():
-            if time.monotonic() - start_check > timeout:
-                raise RuntimeError("NAU7802 data not ready after %.1fs" % timeout)
+            if self._timed_out(start_check, timeout):
+                raise RuntimeError(f"NAU7802 data not ready after {timeout:.1f}s")
             await asyncio.sleep(0)
 
     async def read_async(self, samples=2, timeout=1.0):
         """Read and average consecutive raw sample values. Return average raw value.
-        Raises RuntimeError if any sample is not ready within timeout seconds."""
+        Raises RuntimeError if any sample is not ready within timeout seconds
+        (see wait_available_async)."""
         sample_sum = 0
         sample_count = samples
         while sample_count > 0:
@@ -343,7 +351,8 @@ class NAU7802:
 
     async def read_values_async(self, samples=2, timeout=1.0):
         """Read consecutive raw sample values. Return the list of raw values.
-        Raises RuntimeError if any sample is not ready within timeout seconds."""
+        Raises RuntimeError if any sample is not ready within timeout seconds
+        (see wait_available_async)."""
         values = []
         while len(values) < samples:
             await self.wait_available_async(timeout)
@@ -364,7 +373,8 @@ class NAU7802:
     async def calibrate_async(self, mode="INTERNAL", timeout=5.0):
         """Perform the calibration procedure. Valid calibration modes
         are 'INTERNAL', 'OFFSET', and 'GAIN'. True if successful; False if
-        calibration failed or did not complete within timeout seconds."""
+        calibration failed or did not complete within timeout seconds. Use a
+        timeout of -1 to wait forever."""
         if mode not in dir(CalibrationMode):
             raise ValueError("Invalid Calibration Mode")
         self._calib_mode = mode
@@ -377,7 +387,7 @@ class NAU7802:
         self._c2_cal_start = True
         start_check = time.monotonic()
         while self._c2_cal_start:
-            if time.monotonic() - start_check > timeout:
+            if self._timed_out(start_check, timeout):
                 return False
             await asyncio.sleep(0.010)  # 10ms
         return not self._c2_cal_error
