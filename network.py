@@ -3,19 +3,9 @@ import asyncio
 import gc
 import time
 import wifi
-import mdns
 import ssl
 import socketpool
-import traceback
 import adafruit_requests
-from adafruit_httpserver import Server
-
-EHOSTUNREACH = 118
-
-# URLs to fetch from
-TEXT_URL = "http://wifitest.adafruit.com/testwifi/index.html"
-JSON_QUOTES_URL = "https://www.adafruit.com/api/quotes.php"
-JSON_STARS_URL = "https://api.github.com/repos/adafruit/circuitpython"
 
 # Get wifi details and more from a secrets.py file
 try:
@@ -154,11 +144,7 @@ async def init_network() -> bool:
         print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
 
         show_network_strength(secrets["ssid"])
-        connected = await connect_to_network()
-
-        if not connected:
-            await init_config_portal()
-            # init_mdns()
+        await connect_to_network()
 
     global pool, requests
 
@@ -197,50 +183,6 @@ async def connect_to_network(max_retries: int = 10) -> bool:
     return False
 
 
-async def init_config_portal():
-    print("Starting Config Portal...")
-    wifi.radio.start_dhcp()
-    wifi.radio.start_ap("CinnaScale")
-
-    while wifi.radio.ipv4_address_ap is None:
-        print("Waiting for AP setup...")
-        await asyncio.sleep_ms(10)
-
-    asyncio.create_task(serve(str(wifi.radio.ipv4_gateway_ap)))
-
-
-async def serve(host: str, port: int = 80):
-    pool = socketpool.SocketPool(wifi.radio)
-    server = Server(pool, "/static", debug=True)
-    server.start(host, port)
-
-    while True:
-        server.poll()
-        await asyncio.sleep(0)
-
-
-def init_mdns():
-    print("Starting MDNS...", end="")
-    mdns_server = mdns.Server(wifi.radio)
-    mdns_server.hostname = "custom-mdns-hostname"
-    mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
-    print("Done!")
-
-
-def show_available_networks():
-    # print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
-
-    print("Available WiFi networks:")
-    for network in wifi.radio.start_scanning_networks():
-        if network.ssid != "VirtualHottub":
-            continue
-        print(
-            "\t%s\t\tRSSI: %d\tChannel: %d"
-            % (str(network.ssid, "utf-8"), network.rssi, network.channel)
-        )
-    wifi.radio.stop_scanning_networks()
-
-
 def show_network_strength(ssid: str):
     for network in wifi.radio.start_scanning_networks():
         if network.ssid == ssid:
@@ -251,9 +193,3 @@ def show_network_strength(ssid: str):
             break
     wifi.radio.stop_scanning_networks()
 
-
-def network_strength_test():
-    print("Network strength test... ")
-
-    while True:
-        show_available_networks()
