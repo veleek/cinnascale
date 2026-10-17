@@ -62,7 +62,6 @@ _PWR_CTRL = 0x1C  # Power Control  RW
 _REV_ID = 0x1F  # Chip Revision ID  R-
 
 
-# pylint: disable=too-few-public-methods
 class LDOVoltage:
     """Internal low-dropout voltage regulator settings."""
 
@@ -105,7 +104,6 @@ class CalibrationMode:
 class NAU7802:
     """The primary NAU7802 class."""
 
-    # pylint: disable=too-many-instance-attributes
     @staticmethod
     async def create_async(i2c_bus, address=0x2A, active_channels=1):
         """Instantiate NAU7802; LDO 3v0 volts, gain 128, 10 samples per second
@@ -228,7 +226,7 @@ class NAU7802:
     @ldo_voltage.setter
     def ldo_voltage(self, voltage="EXTERNAL"):
         """Select the LDO Voltage. Valid voltages are '2V4', '2V7', '3V0'."""
-        if not "LDO_" + voltage in dir(LDOVoltage):
+        if not f"LDO_{voltage}" in dir(LDOVoltage):
             raise ValueError("Invalid LDO Voltage")
         self._ldo_voltage = voltage
         if self._ldo_voltage == "2V4":
@@ -247,7 +245,7 @@ class NAU7802:
     def gain(self, factor=1):
         """Select PGA gain factor. Valid values are 1, 2, 4, 8, 16, 32, 64,
         and 128."""
-        if not "GAIN_X" + str(factor) in dir(Gain):
+        if not f"GAIN_X{factor}" in dir(Gain):
             raise ValueError("Invalid Gain Factor")
         self._gain = factor
         if self._gain == 1:
