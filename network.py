@@ -140,7 +140,7 @@ async def init_network() -> bool:
     wifi.radio.hostname = "CinnaScale"
 
     if wifi.radio.connected:
-        print("Already connected to WiFi {} (RSSI: {})".format(wifi.radio.ap_info.ssid, wifi.radio.ap_info.rssi))
+        print(f"Already connected to WiFi {wifi.radio.ap_info.ssid} (RSSI: {wifi.radio.ap_info.rssi})")
     else:
         mac_address = "f4:12:fa:8d:e9:cc"
         wifi.radio.mac_address = binascii.unhexlify(mac_address.replace(":", ""))
@@ -177,16 +177,16 @@ async def connect_to_network(max_retries: int = 10) -> bool:
 
     for attempt in range(1, max_retries + 1):
         try:
-            print("Connecting to {} (attempt {})... ".format(ssid, attempt), end="")
+            print(f"Connecting to {ssid} (attempt {attempt})... ", end="")
             wifi.radio.connect(ssid, secrets["password"], timeout=10)
-            print("Connected with ip {}!".format(wifi.radio.ipv4_address))
+            print(f"Connected with ip {wifi.radio.ipv4_address}!")
             return True
         except Exception as e:
-            print("Failed: {!r}".format(e))
+            print(f"Failed: {e!r}")
             await asyncio.sleep(delay)
             delay = min(delay * 2, 30)
 
-    print("Failed to connect to WiFi after {} attempts".format(max_retries))
+    print(f"Failed to connect to WiFi after {max_retries} attempts")
     return False
 
 
