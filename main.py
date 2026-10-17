@@ -2,12 +2,22 @@ import asyncio
 import board
 import microcontroller
 import digitalio
+import time
 import traceback
-import supervisor
+from watchdog import WatchDogMode
 
+import network
 from led import blink, blink_n
 from scale import init_scale, read_weight_with_validation, tare
 from network import init_network, connect_to_network, CinnaScaleDevice
+
+# Hardware watchdog timeout.  If the event loop stalls (e.g. a blocking network call that never returns) for this long
+# the board is hard reset.
+WATCHDOG_TIMEOUT = 60  # seconds
+# If we haven't successfully posted anything to Home Assistant for this long, stop feeding the watchdog so the board
+# hard resets.  The connection strength sensor is force-updated every weigh cycle, so this should never be hit while
+# things are working.
+MAX_TIME_WITHOUT_SUCCESS = 10 * 60  # seconds
 
 print()
 print("=================================================")
@@ -43,19 +53,39 @@ async def main():
         weigh(trigger_weigh_event),
         blink(1.0, 0x000005),
         watch_buttons(),
+        feed_watchdog(),
     )
+
+
+async def feed_watchdog():
+    """
+    Feed the hardware watchdog as long as we've talked to Home Assistant recently.  This catches both a stalled event
+    loop (nothing feeds the watchdog) and a "zombie" state where everything is running but no updates are getting
+    through, which a reboot usually fixes.
+    """
+    wdt = microcontroller.watchdog
+    wdt.timeout = WATCHDOG_TIMEOUT
+    wdt.mode = WatchDogMode.RESET
+
+    while True:
+        since_success = (time.monotonic_ns() - network.last_success_ns) // 1_000_000_000
+        if since_success < MAX_TIME_WITHOUT_SUCCESS:
+            wdt.feed()
+        else:
+            print("No successful update for {}s, letting the watchdog reset the board".format(since_success))
+        await asyncio.sleep(5)
 
 
 async def watch_buttons():
     global off_button, tare_button, taring, trigger_weigh_event
 
     while True:
-        await asyncio.sleep(0.0)
+        await asyncio.sleep(0.05)
 
         if not off_button.value:
             print("Manual restart...")
             await blink_n(0.05, 0x226600, 10)
-            supervisor.reload()
+            microcontroller.reset()
 
         if not tare_button.value:
             print("Taring...")
@@ -77,7 +107,8 @@ async def watch_buttons():
 async def weigh_once() -> bool:
     global scale_device
 
-    # Try to reconnect if WiFi dropped.  Keep this short so the rest of the loop stays responsive.
+    # Try to reconnect if WiFi dropped.  Keep this short so the rest of the loop stays responsive; if we never get
+    # back online the watchdog will reset the board.
     await connect_to_network(max_retries=2)
 
     scale_device.record_connection_strength()
@@ -136,7 +167,6 @@ except Exception as e:
     print("Unhandled exception!  Resetting...")
     traceback.print_exception(e)
 
-    print("Soft resetting...")
-
-    # import supervisor
-    supervisor.reload()
+    # A hard reset re-initializes the WiFi radio and the NAU7802, unlike supervisor.reload().
+    print("Hard resetting...")
+    microcontroller.reset()
