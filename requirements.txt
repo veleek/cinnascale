@@ -8,5 +8,4 @@ adafruit_register==1.13.0
 adafruit_requests==4.1.17
 adafruit_ticks==1.1.7
 asyncio==3.1.1
-cedargrove_nau7802==2.1.4
 neopixel==6.4.2
