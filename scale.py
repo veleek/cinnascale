@@ -7,6 +7,9 @@ from cedargrove_nau7802_async import NAU7802
 scale: NAU7802 = None
 tare_weight: int = 0
 
+# Max fractional deviation of any trimmed sample from their average.
+MAX_SAMPLE_DEVIATION = 0.01
+
 
 async def init_scale() -> NAU7802:
     global scale
@@ -68,8 +71,8 @@ async def read_weight() -> float:
 async def read_weight_with_validation() -> float:
     '''
     Attempts to read a weight from the scale.  This  will gather five separate measurements, discard the highest and the
-    lowest, and average the remaining values.  If the difference between any value and the average is greater than 1% then a
-    ValueError will be raised.  Otherwise the value in grams will be returned.
+    lowest, and average the remaining values.  If any value differs from the average by more than MAX_SAMPLE_DEVIATION
+    then a ValueError will be raised.  Otherwise the value in grams will be returned.
     '''
     global scale, tare_weight
 
@@ -82,9 +85,9 @@ async def read_weight_with_validation() -> float:
     trimmed_values = sorted_values[1:-1]
     avg = sum(trimmed_values) / len(trimmed_values)
     for value in trimmed_values:
-        if abs(value - avg) > 0.01 * abs(avg):
+        if abs(value - avg) > MAX_SAMPLE_DEVIATION * abs(avg):
             raise ValueError(
-                "Value {} is more than 1% different than the average".format(value)
+                f"Value {value} is more than {MAX_SAMPLE_DEVIATION * 100:g}% different than the average"
             )
 
     return convert_to_grams(avg)
