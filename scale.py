@@ -16,7 +16,7 @@ async def init_scale() -> NAU7802:
     # Instantiate NAU7802 ADC
     print("Initializing scale... ", end="")
     i2c = board.STEMMA_I2C()
-    scale: NAU7802 = NAU7802(i2c, address=0x2A, active_channels=1)
+    scale = NAU7802(i2c, address=0x2A, active_channels=1)
     # scale.gain = 2
 
     enabled = await scale.enable()
@@ -87,9 +87,9 @@ async def read_weight_with_validation() -> float:
     trimmed_values = sorted_values[1:-1]
     avg = sum(trimmed_values) / len(trimmed_values)
     for value in trimmed_values:
-        if abs(value - avg) > 0.01 * avg:
+        if abs(value - avg) > 0.01 * abs(avg):
             raise ValueError(
-                "Value {} is more than 10% different than the average".format(value)
+                "Value {} is more than 1% different than the average".format(value)
             )
 
     return convert_to_grams(avg)

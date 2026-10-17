@@ -266,6 +266,16 @@ class NAU7802:
         await asyncio.sleep(0.010)  # Wait 10ms (200us minimum)
         return False
 
+    async def _wait_available(self, timeout=1.0):
+        """Wait for the ADC data-ready status. At 10SPS a sample should be ready
+        within 100ms; raise if the chip stops responding so we don't spin
+        forever (e.g. after a brownout reset of the NAU7802)."""
+        deadline = time.monotonic_ns() + int(timeout * 1_000_000_000)
+        while not self.available():
+            if time.monotonic_ns() > deadline:
+                raise RuntimeError("NAU7802 data not ready after %.1fs" % timeout)
+            await asyncio.sleep(0)  # Let us play nice with anything else async
+
     def available(self):
         """Read the ADC data-ready status. True when data is available; False when
         ADC data is unavailable."""
@@ -307,7 +317,10 @@ class NAU7802:
         elif self._calib_mode == "GAIN":  # External PGA full-scale gain setting
             self._c2_cal_mode = CalibrationMode.GAIN
         self._c2_cal_start = True
+        start_check = time.monotonic()
         while self._c2_cal_start:
+            if time.monotonic() - start_check > 5.0:
+                return False
             await asyncio.sleep(0.010)  # 10ms
         return not self._c2_cal_error
 
@@ -330,9 +343,7 @@ class NAU7802:
         sample_sum = 0
         sample_count = samples
         while sample_count > 0:
-            while not self.available():
-                await asyncio.sleep(0)  # Let us play nice with anything else async
-                pass
+            await self._wait_available()
             sample_sum = sample_sum + self.read()
             sample_count -= 1
         return int(sample_sum / samples)
@@ -343,9 +354,7 @@ class NAU7802:
 
         sample_count = samples
         while sample_count > 0:
-            while not self.available():
-                await asyncio.sleep(0)
-                pass
+            await self._wait_available()
             sample_values.append(self.read())
             sample_count -= 1
 
