@@ -4,15 +4,27 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Deploy",
+            "label": "Sync device",
             "type": "shell",
-            "command": "dir *.py | copy -destination E:\\",
+            "command": "./tools/Sync-CircuitPy.ps1",
             "problemMatcher": [],
             "options": {
                 "shell": {
-                    "args": [
-                        "-NoProfile"
-                    ]
+                    "executable": "pwsh",
+                    "args": ["-NoProfile", "-Command"]
+                }
+            }
+        },
+        {
+            "label": "Watch device",
+            "type": "shell",
+            "command": "./tools/Sync-CircuitPy.ps1 Watch",
+            "isBackground": true,
+            "problemMatcher": [],
+            "options": {
+                "shell": {
+                    "executable": "pwsh",
+                    "args": ["-NoProfile", "-Command"]
                 }
             }
         }

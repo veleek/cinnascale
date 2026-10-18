@@ -53,3 +53,5 @@ lib/
 .TRASHES
 boot_out.txt
 secrets.py
+# Device sync state (tools/Sync-CircuitPy.ps1)
+.circuitpy-sync.json
