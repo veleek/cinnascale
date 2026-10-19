@@ -1,6 +1,7 @@
 import binascii
 import asyncio
 import gc
+import time
 import wifi
 import mdns
 import ssl
@@ -27,6 +28,10 @@ pool: socketpool.SocketPool = None
 requests: adafruit_requests.Session = None
 
 HASS_URL = secrets["homeassistant_url"]
+
+# time.monotonic_ns() of the last successful post to Home Assistant.  Used by the watchdog in main.py to decide whether
+# the device is still healthy.
+last_success_ns: int = time.monotonic_ns()
 
 
 class BaseCinnaSensor:
@@ -62,13 +67,14 @@ class BaseCinnaSensor:
 
         url = f"{HASS_URL}/api/states/{self.sensor_name}"
 
-        global requests
+        global requests, last_success_ns
         try:
             gc.collect()
             with requests.post(url, json=data, headers=self.headers, timeout=5) as response:
                 status_code = response.status_code
         except Exception as e:
-            # Never let a failed post take down the main loop.  The next weigh cycle will try again.
+            # Never let a failed post take down the main loop.  If posts keep failing, the watchdog in main.py will
+            # eventually hard reset the device.
             print(f"Update failed: {e!r}")
             return
 
@@ -76,6 +82,7 @@ class BaseCinnaSensor:
             print(f"Unexpected status code {status_code}")
         else:
             self.value = value
+            last_success_ns = time.monotonic_ns()
             print(f"Success! Status: {status_code}")
 
 
