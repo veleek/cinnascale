@@ -1,5 +1,6 @@
 import binascii
 import asyncio
+import gc
 import wifi
 import mdns
 import ssl
@@ -63,18 +64,19 @@ class BaseCinnaSensor:
 
         global requests
         try:
-            response = requests.post(url, json=data, headers=self.headers, timeout=2)
-        except adafruit_requests.OutOfRetries as oor:
-            print("Update failed.  Out of retries.")
-            traceback.print_exception(oor)
+            gc.collect()
+            with requests.post(url, json=data, headers=self.headers, timeout=5) as response:
+                status_code = response.status_code
+        except Exception as e:
+            # Never let a failed post take down the main loop.  The next weigh cycle will try again.
+            print(f"Update failed: {e!r}")
             return
-            # raise CinnaScaleError("Failed to update {} value".format(self.sensor_name)) from e
 
-        if response.status_code < 200 or response.status_code >= 300:
-            print(f"Unexpected status code {response.status_code}")
+        if status_code < 200 or status_code >= 300:
+            print(f"Unexpected status code {status_code}")
         else:
             self.value = value
-            print(f"Success! Status: {response.status_code}")
+            print(f"Success! Status: {status_code}")
 
 
 class CinnaBinarySensor(BaseCinnaSensor):
@@ -84,8 +86,8 @@ class CinnaBinarySensor(BaseCinnaSensor):
         super().__init__(name, friendly_name, device_class, icon)
         self.sensor_type = "binary_sensor"
 
-    def update(self, value: int):
-        return super().update("on" if value is True else "off")
+    def update(self, value: bool, force: bool = False):
+        return super().update("on" if value is True else "off", force)
 
 
 class CinnaSensor(BaseCinnaSensor):
@@ -119,7 +121,11 @@ class CinnaScaleDevice():
     # want to record this whenever possible and avoid potential issues with the scale updated so that we have some data
     # point that indicates that we're still connected.
     def record_connection_strength(self):
-        self.connection_strength_sensor.update(wifi.radio.ap_info.rssi, True)
+        ap_info = wifi.radio.ap_info
+        if ap_info is None:
+            print("Not connected to WiFi, skipping connection strength update")
+            return
+        self.connection_strength_sensor.update(ap_info.rssi, True)
 
     def record_weight(self, success: bool, weight: int):
         if success:
@@ -130,15 +136,18 @@ class CinnaScaleDevice():
             self.unstable_sensor.update(True)
 
 
-async def init_network() -> None:
+async def init_network() -> bool:
     wifi.radio.hostname = "CinnaScale"
 
     if wifi.radio.connected:
         print("Already connected to WiFi {} (RSSI: {})".format(wifi.radio.ap_info.ssid, wifi.radio.ap_info.rssi))
     else:
-        # network_strength_test()
-        connected = connect_to_network()
-        # connected = False
+        mac_address = "f4:12:fa:8d:e9:cc"
+        wifi.radio.mac_address = binascii.unhexlify(mac_address.replace(":", ""))
+        print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
+
+        show_network_strength(secrets["ssid"])
+        connected = await connect_to_network()
 
         if not connected:
             await init_config_portal()
@@ -146,36 +155,38 @@ async def init_network() -> None:
 
     global pool, requests
 
-    pool = socketpool.SocketPool(wifi.radio)
-    requests = adafruit_requests.Session(pool, ssl.create_default_context())
+    # Only create the socket pool and session once.  Creating new ones on every reconnect orphans the sockets held by
+    # the old session, and the ESP32 only has a handful of them.
+    if requests is None:
+        pool = socketpool.SocketPool(wifi.radio)
+        requests = adafruit_requests.Session(pool, ssl.create_default_context())
+
+    return wifi.radio.connected
 
 
-def connect_to_network() -> bool:
-    MAX_RETRIES = 10
-    retry_count = 0
-
-    # old_mac = ['0xf4', '0x12', '0xfa', '0x8d', '0x9e', '0xdc']
-    new_mac = "f4:12:fa:8d:e9:cc"
-    wifi.radio.mac_address = binascii.unhexlify(new_mac.replace(":", ""))
-
-    print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
+async def connect_to_network(max_retries: int = 10) -> bool:
+    """
+    Connect to WiFi if we're not already connected, retrying with a backoff.  Safe to call at any time; returns
+    immediately if we're already connected.
+    """
+    if wifi.radio.connected:
+        return True
 
     ssid = secrets["ssid"]
+    delay = 1
 
-    while retry_count < MAX_RETRIES:
+    for attempt in range(1, max_retries + 1):
         try:
-            # show_available_networks()
-            # print("Connecting to %s... " % secrets["ssid"], end="")
-
-            show_network_strength(ssid)
-            wifi.radio.connect(ssid, secrets["password"])
-            print("Connected with ip {}!".format(wifi.radio.ipv4_address))
+            print(f"Connecting to {ssid} (attempt {attempt})... ", end="")
+            wifi.radio.connect(ssid, secrets["password"], timeout=10)
+            print(f"Connected with ip {wifi.radio.ipv4_address}!")
             return True
         except Exception as e:
-            print("Failed: {}".format(e))
-            retry_count += 1
+            print(f"Failed: {e!r}")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30)
 
-    print("Failed to connect to WiFi after {} retries".format(retry_count))
+    print(f"Failed to connect to WiFi after {max_retries} attempts")
     return False
 
 
@@ -227,9 +238,8 @@ def show_network_strength(ssid: str):
     for network in wifi.radio.start_scanning_networks():
         if network.ssid == ssid:
             print(
-                "Connecting to %s (RSSI: %d, Channel: %d)... "
+                "Found %s (RSSI: %d, Channel: %d)"
                 % (str(network.ssid, "utf-8"), network.rssi, network.channel),
-                end="",
             )
             break
     wifi.radio.stop_scanning_networks()

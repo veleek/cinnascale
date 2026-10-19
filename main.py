@@ -5,11 +5,9 @@ import digitalio
 import traceback
 import supervisor
 
-from led import blink, pixels, blink_n
+from led import blink, blink_n
 from scale import init_scale, read_weight_with_validation, tare
-from network import init_network, CinnaScaleDevice, CinnaBinarySensor, CinnaSensor
-
-EHOSTUNREACH = 118
+from network import init_network, connect_to_network, CinnaScaleDevice
 
 print()
 print("=================================================")
@@ -41,25 +39,11 @@ async def main():
 
     await blink_n(0.1, 0x110033, 3)
 
-    while True:
-        try:
-            await asyncio.gather(
-                weigh(trigger_weigh_event),
-                blink(1.0, 0x000005),
-                watch_buttons(),
-            )
-        except RuntimeError as re:
-            # Check if the cause of the exception was an OSError with EHOSTUNREACH
-            if isinstance(re.__cause__, OSError) and re.__cause__.errno == EHOSTUNREACH:
-                print("Host unreachable.  Restarting network... ", end="")
-                reconnected = await init_network()
-                if reconnected:
-                    print("Reconnected!")
-                else:
-                    print("Failed to reconnect.")
-                    raise
-            else:
-                raise
+    await asyncio.gather(
+        weigh(trigger_weigh_event),
+        blink(1.0, 0x000005),
+        watch_buttons(),
+    )
 
 
 async def watch_buttons():
@@ -92,6 +76,9 @@ async def watch_buttons():
 
 async def weigh_once() -> bool:
     global scale_device
+
+    # Try to reconnect if WiFi dropped.  Keep this short so the rest of the loop stays responsive.
+    await connect_to_network(max_retries=2)
 
     scale_device.record_connection_strength()
     success, result = await try_weigh()
