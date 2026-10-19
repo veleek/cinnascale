@@ -18,6 +18,7 @@ WATCHDOG_TIMEOUT = 60  # seconds
 # hard resets.  The connection strength sensor is force-updated every weigh cycle, so this should never be hit while
 # things are working.
 MAX_TIME_WITHOUT_SUCCESS = 10 * 60  # seconds
+NS_PER_SECOND = 1_000_000_000
 
 print()
 print("=================================================")
@@ -68,11 +69,11 @@ async def feed_watchdog():
     wdt.mode = WatchDogMode.RESET
 
     while True:
-        since_success = (time.monotonic_ns() - network.last_success_ns) // 1_000_000_000
+        since_success = (time.monotonic_ns() - network.last_success_ns) // NS_PER_SECOND
         if since_success < MAX_TIME_WITHOUT_SUCCESS:
             wdt.feed()
         else:
-            print("No successful update for {}s, letting the watchdog reset the board".format(since_success))
+            print(f"No successful update for {since_success}s, letting the watchdog reset the board")
         await asyncio.sleep(5)
 
 
