@@ -64,7 +64,7 @@ $LoadLast = @('code.py', 'main.py')
 
 $TextExtensions = @('.py', '.txt', '.html', '.htm', '.css', '.js', '.json', '.toml', '.csv', '.md')
 
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$RepoRoot = Split-Path $PSScriptRoot
 $StatePath = Join-Path $RepoRoot '.circuitpy-sync.json'
 
 function Find-DeviceRoot {
