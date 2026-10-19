@@ -168,7 +168,7 @@ function Invoke-Web([string]$method, [string]$rel, [byte[]]$body, [switch]$Json,
     try { $response = $Http.SendAsync($request).GetAwaiter().GetResult() }
     catch {
         $inner = $_.Exception.GetBaseException().Message
-        throw "$method $(Get-WebUrl $rel) failed: $inner (is the device reachable at $DeviceUrl?)"
+        throw "$method $(Get-WebUrl $rel) failed: $inner (is the device reachable at ${DeviceUrl}?)"
     }
     $status = [int]$response.StatusCode
     if ($AllowMissing -and $status -eq 404) { return $null }
