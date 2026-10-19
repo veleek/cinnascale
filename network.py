@@ -7,17 +7,12 @@ import ssl
 import socketpool
 import adafruit_requests
 
-# Get wifi details and more from a secrets.py file
-try:
-    from secrets import secrets
-except ImportError:
-    print("WiFi secrets are kept in secrets.py, please add them there!")
-    raise
+import config
 
 pool: socketpool.SocketPool = None
 requests: adafruit_requests.Session = None
 
-HASS_URL = secrets["homeassistant_url"]
+HASS_URL = config.get("homeassistant_url")
 
 # time.monotonic_ns() of the last successful post to Home Assistant.  Used by the watchdog in main.py to decide whether
 # the device is still healthy.
@@ -37,7 +32,7 @@ class BaseCinnaSensor:
             "icon": icon,
         }
         self.headers = {
-            "Authorization": "Bearer " + secrets["token"],
+            "Authorization": "Bearer " + config.get("token", ""),
             "Content-Type": "application/json",
         }
 
@@ -143,7 +138,7 @@ async def init_network() -> bool:
         wifi.radio.mac_address = binascii.unhexlify(mac_address.replace(":", ""))
         print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
 
-        show_network_strength(secrets["ssid"])
+        show_network_strength(config.get("ssid"))
         await connect_to_network()
 
     global pool, requests
@@ -165,13 +160,13 @@ async def connect_to_network(max_retries: int = 10) -> bool:
     if wifi.radio.connected:
         return True
 
-    ssid = secrets["ssid"]
+    ssid = config.get("ssid")
     delay = 1
 
     for attempt in range(1, max_retries + 1):
         try:
             print(f"Connecting to {ssid} (attempt {attempt})... ", end="")
-            wifi.radio.connect(ssid, secrets["password"], timeout=10)
+            wifi.radio.connect(ssid, config.get("password", ""), timeout=10)
             print(f"Connected with ip {wifi.radio.ipv4_address}!")
             return True
         except Exception as e:
