@@ -25,7 +25,7 @@ repo, use `tools/Sync-CircuitPy.ps1` (PowerShell 7) to keep the repo and the `CI
 ```powershell
 ./tools/Sync-CircuitPy.ps1 Watch   # edit in the repo OR on the device; the other side follows on save
 ./tools/Sync-CircuitPy.ps1         # one-off two-way sync
-./tools/Sync-CircuitPy.ps1 Status  # show what would be copied
+./tools/Sync-CircuitPy.ps1 Status  # show what would be copied (add -Diff for a git diff of each file)
 ./tools/Sync-CircuitPy.ps1 Push    # repo wins (Pull: device wins); add -Path main.py to limit it
 ```
 

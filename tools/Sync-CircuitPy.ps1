@@ -26,6 +26,10 @@
 .PARAMETER Path
     Only consider files matching these wildcard patterns (repo-relative, forward slashes), e.g. 'main.py' or 'static/*'.
 
+.PARAMETER Diff
+    Also print a git diff for each file that differs, always from the repo copy (---) to the device copy (+++),
+    ignoring line endings. Most useful with Status or after a conflict warning.
+
 .PARAMETER Drive
     Device root. Defaults to $env:CIRCUITPY_DRIVE, else the first drive labelled CIRCUITPY.
 
@@ -46,6 +50,8 @@ param(
     [string]$Mode = 'Sync',
 
     [string[]]$Path = @('*'),
+
+    [switch]$Diff,
 
     [string]$Drive = $env:CIRCUITPY_DRIVE
 )
@@ -117,6 +123,28 @@ function Save-State($state) {
     $ordered | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
 }
 
+# git diff --no-index prints whatever paths it's given, so stage both copies under repo/ and device/ in a temp
+# folder to get readable headers like '--- repo/main.py' / '+++ device/main.py'.
+function Show-Diff($item) {
+    $WhatIfPreference = $false  # scratch copies only; -WhatIf shouldn't suppress the diff
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) "circuitpy-diff-$PID"
+    try {
+        $sides = foreach ($side in @{ Name = 'repo'; File = $item.Repo }, @{ Name = 'device'; File = $item.Device }) {
+            if (Test-Path -LiteralPath $side.File -PathType Leaf) {
+                Copy-SyncFile $side.File (Join-Path $tmp "$($side.Name)/$($item.Path)")
+                "$($side.Name)/$($item.Path)"
+            }
+            else { '/dev/null' }
+        }
+        Push-Location $tmp
+        # Out-Host keeps the diff out of Invoke-Sync's return value; that redirect also stops git auto-coloring.
+        $color = if ([Console]::IsOutputRedirected) { '--color=never' } else { '--color=always' }
+        try { git diff --no-index --no-prefix --ignore-cr-at-eol $color -- $sides[0] $sides[1] | Out-Host }
+        finally { Pop-Location }
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 function Copy-SyncFile([string]$from, [string]$to) {
     $dir = Split-Path -Parent $to
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
@@ -155,6 +183,7 @@ function Invoke-Sync([string]$deviceRoot, [string]$mode) {
 
     $changed = $false
     foreach ($item in $plan) {
+        if ($Diff -and $item.Action -ne 'same') { Show-Diff $item }
         switch ($item.Action) {
             'same' { $state[$item.Path] = $item.Hash }
             'push' {
