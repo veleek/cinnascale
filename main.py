@@ -6,7 +6,9 @@ import time
 import traceback
 from watchdog import WatchDogMode
 
+import config
 import network
+
 from led import blink, blink_n
 from scale import init_scale, read_weight_with_validation, tare
 from network import init_network, connect_to_network, CinnaScaleDevice
@@ -44,6 +46,14 @@ scale_device = CinnaScaleDevice()
 
 
 async def main():
+    # Hold the tare button while powering on to enter setup mode.
+    if config.needs_setup() or not tare_button.value:
+        print("Entering setup mode")
+        # Imported here so the HTTP server only costs heap when it's actually used.
+        from portal import run_portal
+
+        await asyncio.gather(run_portal(), blink(0.5, 0x003300))
+
     await blink_n(0.2, 0x000033, 3)
 
     await asyncio.gather(init_network(), init_scale())

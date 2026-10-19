@@ -73,7 +73,17 @@ pass `-Drive E:\`. The same commands are available as VS Code tasks ("Sync devic
   }
   ```
 
+  Alternatively, skip `secrets.py` and use setup mode (below).
+
 - Copy everything from this folder over to the remote device.
+
+### Setup mode
+
+If WiFi or Home Assistant settings are missing, or you hold the Tare button while the device powers on, it starts an
+open access point called `CinnaScale-Setup` (the LED blinks green). Connect to it and browse to `http://192.168.4.1/`
+to set the WiFi SSID/password, Home Assistant URL and token. Blank fields keep their current value. Saved settings are
+stored in NVM, override `secrets.py`, and the device restarts after saving. If nothing is saved within 15 minutes it
+restarts and tries the normal startup again.
 
 ## Notes
 
