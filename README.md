@@ -20,12 +20,20 @@ automatically restart whenever it detects any changes.
 One of the biggest problems I found with CircuitPython is that it doesn't play particularly friendly with git. Because
 it will auto-restart when anything changes, you don't really want to have a git repository on the device (also
 since git will make a BUNCH of small file edits you may reduce the lifetime of your device). So after you sync the git
-repo, there are two different ways you can work with this code:
+repo, use `tools/Sync-CircuitPy.ps1` (PowerShell 7) to keep the repo and the `CIRCUITPY` drive in sync:
 
-1. Copy everything except for `.git` over to the device and then work directly from there.
-2. Work from within the git repository and then "deploy" by copying the files you changed.
+```powershell
+./tools/Sync-CircuitPy.ps1 Watch   # edit in the repo OR on the device; the other side follows on save
+./tools/Sync-CircuitPy.ps1         # one-off two-way sync
+./tools/Sync-CircuitPy.ps1 Status  # show what would be copied (add -Diff for a git diff of each file)
+./tools/Sync-CircuitPy.ps1 Push    # repo wins (Pull: device wins); add -Path main.py to limit it
+```
 
-They both have their pros and cons, so pick your poison.
+It copies everything git knows about except repo-only files (README, `.vscode`, `tools`, `requirements.txt`) and never
+touches `lib/` (use circup) or `secrets.py`. It remembers file hashes from the last sync in `.circuitpy-sync.json`, so
+it knows which side changed and warns instead of overwriting when both did. Files you create on the device are listed
+but only brought into the repo with `Pull`. Deletes are never synced. The drive is found by its `CIRCUITPY` label, or
+pass `-Drive E:\`. The same commands are available as VS Code tasks ("Sync device", "Watch device").
 
 ## Getting Started
 
