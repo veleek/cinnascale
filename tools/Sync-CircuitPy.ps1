@@ -140,8 +140,12 @@ function Connect-Device {
     }
     if (-not $Password) { throw 'No web workflow password. Pass -Password or set $env:CIRCUITPY_WEB_API_PASSWORD.' }
 
-    # The web workflow uses basic auth with an empty user name.
-    $script:Http = [Net.Http.HttpClient]::new()
+    # The web workflow closes the socket after every request without saying so, which makes a pooled connection
+    # look reusable until the next request fails on it ("An error occurred while sending the request"). A zero
+    # pooled lifetime gives every request its own connection. Auth is basic with an empty user name.
+    $handler = [Net.Http.SocketsHttpHandler]::new()
+    $handler.PooledConnectionLifetime = [TimeSpan]::Zero
+    $script:Http = [Net.Http.HttpClient]::new($handler)
     $script:Http.Timeout = [TimeSpan]::FromSeconds(15)
     $script:Http.DefaultRequestHeaders.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new(
         'Basic', [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(":$Password")))
@@ -161,7 +165,11 @@ function Invoke-Web([string]$method, [string]$rel, [byte[]]$body, [switch]$Json,
         $request.Content = [Net.Http.ByteArrayContent]::new($body)
         $request.Headers.Add('X-Timestamp', [string][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
     }
-    $response = $Http.SendAsync($request).GetAwaiter().GetResult()
+    try { $response = $Http.SendAsync($request).GetAwaiter().GetResult() }
+    catch {
+        $inner = $_.Exception.GetBaseException().Message
+        throw "$method $(Get-WebUrl $rel) failed: $inner (is the device reachable at $DeviceUrl?)"
+    }
     $status = [int]$response.StatusCode
     if ($AllowMissing -and $status -eq 404) { return $null }
     if ($response.IsSuccessStatusCode) { return , $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult() }
