@@ -22,6 +22,7 @@ Implementation Notes
 * `NAU7802 FeatherWing; OSH Park project (16-DIP version)
   <https://oshpark.com/shared_projects/ZfryHYnc>`_
 * `SparkFun Quicc Scale (single channel) <https://www.sparkfun.com/products/15242>`_
+* `Adafruit NAU78082 STEMMA QT (single channel) <https://www.adafruit.com/product/4538>`_
 
 **Software and Dependencies:**
 
@@ -32,18 +33,19 @@ Implementation Notes
 * Adafruit's Register library: https://github.com/adafruit/Adafruit_CircuitPython_Register
 """
 
-import time
-import struct
 import asyncio
+import struct
+import time
 
 from adafruit_bus_device.i2c_device import I2CDevice
-from adafruit_register.i2c_struct import ROUnaryStruct
+from adafruit_register.i2c_bit import ROBit, RWBit
 
 # from adafruit_register.i2c_struct   import UnaryStruct
-from adafruit_register.i2c_bits import RWBits
-from adafruit_register.i2c_bits import ROBits
-from adafruit_register.i2c_bit import RWBit
-from adafruit_register.i2c_bit import ROBit
+from adafruit_register.i2c_bits import ROBits, RWBits
+from adafruit_register.i2c_struct import ROUnaryStruct
+
+__version__ = "0.0.0+auto.0"
+__repo__ = "https://github.com/veleek/CircuitPython_NAU7802_Async.git"
 
 # DEVICE REGISTER MAP
 _PU_CTRL = 0x00  # Power-Up Control RW
@@ -60,7 +62,6 @@ _PWR_CTRL = 0x1C  # Power Control  RW
 _REV_ID = 0x1F  # Chip Revision ID  R-
 
 
-# pylint: disable=too-few-public-methods
 class LDOVoltage:
     """Internal low-dropout voltage regulator settings."""
 
@@ -103,30 +104,44 @@ class CalibrationMode:
 class NAU7802:
     """The primary NAU7802 class."""
 
-    # pylint: disable=too-many-instance-attributes
-    def __init__(self, i2c_bus, address=0x2A, active_channels=1):
+    @staticmethod
+    async def create_async(i2c_bus, address=0x2A, active_channels=1):
         """Instantiate NAU7802; LDO 3v0 volts, gain 128, 10 samples per second
         conversion rate, disabled ADC chopper clock, low ESR caps, and PGA output
         stabilizer cap if in single channel mode."""
+        self = NAU7802(i2c_bus, address, active_channels)
+        await self.init_async()
+
+        return self
+
+    def __init__(self, i2c_bus, address, active_channels):
         self.i2c_device = I2CDevice(i2c_bus, address)
-        if not self.reset():
+        self._act_channels = active_channels
+
+        self._enable = False
+        self._calib_mode = None  # Initialize for later use
+        self._adc_out = None  # Initialize for later use
+
+    async def init_async(self):
+        """Initialize NAU7802 device.  The reset and enable methods both have long
+        running waits in them so we want to do them asynchronously."""
+        if not await self.reset_async():
             raise RuntimeError("NAU7802 device could not be reset")
-        if not self.enable(True):
+        if not await self.enable_async(True):
             raise RuntimeError("NAU7802 device could not be enabled")
+
         self.ldo_voltage = "3V0"  # 3.0-volt internal analog power (AVDD)
         self._pu_ldo_source = True  # Internal analog power (AVDD)
         self.gain = 128  # X128
         self._c2_conv_rate = ConversionRate.RATE_10SPS  # 10SPS default
         self._adc_chop_clock = 0x3  # 0x3 = Disable ADC chopper clock
         self._pga_ldo_mode = 0x0  # 0x0 = Use low ESR capacitors
-        self._act_channels = active_channels
+
         # 0x1 = Enable PGA out stabilizer cap for single channel use
         self._pc_cap_enable = 0x1
         if self._act_channels == 2:
             # 0x0 = Disable PGA out stabilizer cap for dual channel use
             self._pc_cap_enable = 0x0
-        self._calib_mode = None  # Initialize for later use
-        self._adc_out = None  # Initialize for later use
 
     # DEFINE I2C DEVICE BITS, NYBBLES, BYTES, AND REGISTERS
     # Chip Revision  R-
@@ -211,7 +226,7 @@ class NAU7802:
     @ldo_voltage.setter
     def ldo_voltage(self, voltage="EXTERNAL"):
         """Select the LDO Voltage. Valid voltages are '2V4', '2V7', '3V0'."""
-        if not "LDO_" + voltage in dir(LDOVoltage):
+        if not f"LDO_{voltage}" in dir(LDOVoltage):
             raise ValueError("Invalid LDO Voltage")
         self._ldo_voltage = voltage
         if self._ldo_voltage == "2V4":
@@ -228,9 +243,9 @@ class NAU7802:
 
     @gain.setter
     def gain(self, factor=1):
-        """Select PGA gain factor. Valid values are '1, 2, 4, 8, 16, 32, 64,
+        """Select PGA gain factor. Valid values are 1, 2, 4, 8, 16, 32, 64,
         and 128."""
-        if not "GAIN_X" + str(factor) in dir(Gain):
+        if not f"GAIN_X{factor}" in dir(Gain):
             raise ValueError("Invalid Gain Factor")
         self._gain = factor
         if self._gain == 1:
@@ -250,7 +265,29 @@ class NAU7802:
         elif self._gain == 128:
             self._c1_gains = Gain.GAIN_X128
 
-    async def enable(self, power=True):
+    @property
+    def poll_rate(self):
+        """ADC conversion/polling rate."""
+        return self._c2_conv_rate
+
+    @poll_rate.setter
+    def poll_rate(self, rate=0):
+        """Select polling rate. Valid values are 10, 20, 40, 80, and 320."""
+        if not f"RATE_{rate}SPS" in dir(ConversionRate):
+            raise ValueError("Invalid Conversion Rate")
+        self._rate = rate
+        if self._rate == 10:
+            self._c2_conv_rate = ConversionRate.RATE_10SPS
+        if self._rate == 20:
+            self._c2_conv_rate = ConversionRate.RATE_20SPS
+        if self._rate == 40:
+            self._c2_conv_rate = ConversionRate.RATE_40SPS
+        if self._rate == 80:
+            self._c2_conv_rate = ConversionRate.RATE_80SPS
+        if self._rate == 320:
+            self._c2_conv_rate = ConversionRate.RATE_320SPS
+
+    async def enable_async(self, power=True):
         """Enable(start) or disable(stop) the internal analog and digital
         systems power. Enable = True; Disable (low power) = False. Returns
         True when enabled; False when disabled."""
@@ -259,7 +296,7 @@ class NAU7802:
             self._pu_analog = True
             self._pu_digital = True
             await asyncio.sleep(0.750)  # Wait 750ms; minimum 400ms
-            self._pu_start = True  # Start acquisition system cycling
+            self._pu_cycle_start = True  # Start acquisition system cycling
             return self._pu_ready
         self._pu_analog = False
         self._pu_digital = False
@@ -283,7 +320,46 @@ class NAU7802:
         self._adc_out = value / 128  # Restore to 24-bit signed integer value
         return self._adc_out
 
-    async def reset(self):
+    @staticmethod
+    def _timed_out(start, timeout):
+        """True once timeout seconds have passed since start. A negative timeout
+        (e.g. -1) never expires; a timeout of 0 expires immediately."""
+        return timeout >= 0 and time.monotonic() - start >= timeout
+
+    async def wait_available_async(self, timeout=1.0):
+        """Wait for ADC data to be available. Raises RuntimeError if no data is
+        ready within timeout seconds (e.g. the device stopped responding or was
+        reset by a brownout) instead of waiting forever. Use a timeout of 0 to
+        raise unless data is available immediately, or -1 to wait forever."""
+        start_check = time.monotonic()
+        while not self.available():
+            if self._timed_out(start_check, timeout):
+                raise RuntimeError(f"NAU7802 data not ready after {timeout:.1f}s")
+            await asyncio.sleep(0)
+
+    async def read_async(self, samples=2, timeout=1.0):
+        """Read and average consecutive raw sample values. Return average raw value.
+        Raises RuntimeError if any sample is not ready within timeout seconds
+        (see wait_available_async)."""
+        sample_sum = 0
+        sample_count = samples
+        while sample_count > 0:
+            await self.wait_available_async(timeout)
+            sample_sum = sample_sum + self.read()
+            sample_count -= 1
+        return int(sample_sum / samples)
+
+    async def read_values_async(self, samples=2, timeout=1.0):
+        """Read consecutive raw sample values. Return the list of raw values.
+        Raises RuntimeError if any sample is not ready within timeout seconds
+        (see wait_available_async)."""
+        values = []
+        while len(values) < samples:
+            await self.wait_available_async(timeout)
+            values.append(self.read())
+        return values
+
+    async def reset_async(self):
         """Resets all device registers and enables digital system power.
         Returns the power ready status bit value: True when system is ready;
         False when system not ready for use."""
@@ -294,10 +370,12 @@ class NAU7802:
         await asyncio.sleep(0.750)  # Wait 750ms; 400ms minimum
         return self._pu_ready
 
-    async def calibrate(self, mode="INTERNAL"):
+    async def calibrate_async(self, mode="INTERNAL", timeout=5.0):
         """Perform the calibration procedure. Valid calibration modes
-        are 'INTERNAL', 'OFFSET', and 'GAIN'. True if successful."""
-        if not mode in dir(CalibrationMode):
+        are 'INTERNAL', 'OFFSET', and 'GAIN'. True if successful; False if
+        calibration failed or did not complete within timeout seconds. Use a
+        timeout of -1 to wait forever."""
+        if mode not in dir(CalibrationMode):
             raise ValueError("Invalid Calibration Mode")
         self._calib_mode = mode
         if self._calib_mode == "INTERNAL":  # Internal PGA offset (zero setting)
@@ -307,46 +385,9 @@ class NAU7802:
         elif self._calib_mode == "GAIN":  # External PGA full-scale gain setting
             self._c2_cal_mode = CalibrationMode.GAIN
         self._c2_cal_start = True
+        start_check = time.monotonic()
         while self._c2_cal_start:
+            if self._timed_out(start_check, timeout):
+                return False
             await asyncio.sleep(0.010)  # 10ms
         return not self._c2_cal_error
-
-    async def zero_channel(self):
-        """Initiate internal calibration for current channel.Use when scale is started,
-        a new channel is selected, or to adjust for measurement drift. Remove weight
-        and tare from load cell before executing."""
-        print(
-            "channel %1d calibrate.INTERNAL: %5s"
-            % (self.channel, await self.calibrate("INTERNAL"))
-        )
-        print(
-            "channel %1d calibrate.OFFSET:   %5s"
-            % (self.channel, await self.calibrate("OFFSET"))
-        )
-        print("...channel %1d zeroed" % self.channel)
-
-    async def read_raw_value(self, samples=2):
-        """Read and average consecutive raw sample values. Return average raw value."""
-        sample_sum = 0
-        sample_count = samples
-        while sample_count > 0:
-            while not self.available():
-                await asyncio.sleep(0)  # Let us play nice with anything else async
-                pass
-            sample_sum = sample_sum + self.read()
-            sample_count -= 1
-        return int(sample_sum / samples)
-
-    async def read_raw_values(self, samples=2):
-        """Read consecutive raw sample values. Return list of raw values."""
-        sample_values = []
-
-        sample_count = samples
-        while sample_count > 0:
-            while not self.available():
-                await asyncio.sleep(0)
-                pass
-            sample_values.append(self.read())
-            sample_count -= 1
-
-        return sample_values
