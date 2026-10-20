@@ -35,6 +35,13 @@ it knows which side changed and warns instead of overwriting when both did. File
 but only brought into the repo with `Pull`. Deletes are never synced. The drive is found by its `CIRCUITPY` label, or
 pass `-Drive E:\`. The same commands are available as VS Code tasks ("Sync device", "Watch device").
 
+The same commands work over WiFi through CircuitPython's [web workflow] file API. Add `-Address <device>` (e.g.
+`cpy-abc123.local` or its IP), and provide the `CIRCUITPY_WEB_API_PASSWORD` from the device's `settings.toml` with
+`-Password`, `$env:CIRCUITPY_WEB_API_PASSWORD`, or a local copy of `settings.toml` at the repo root (it's gitignored).
+Set `$env:CIRCUITPY_WEB_ADDRESS` to fall back to the web automatically whenever the drive isn't plugged in. `Watch`
+polls the device every couple of seconds (`-PollSeconds`). Web writes fail with a 409 while the board is mounted over
+USB, because the USB host owns the filesystem then; use `-Drive` or eject it.
+
 ## Getting Started
 
 - Connect to the device:
@@ -126,4 +133,5 @@ there you only get the reset reason.
 [Pelouze Dymo SP5]: https://www.newegg.com/dymo-by-pelouze-sp5/p/N82E16848077011
 [CircuitPython]: https://circuitpython.org/
 [circup]: https://github.com/adafruit/circup
+[web workflow]: https://docs.circuitpython.org/en/latest/docs/workflows.html#web
 [Long Lived Access Token]: https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token
