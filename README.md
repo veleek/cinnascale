@@ -85,6 +85,29 @@ to set the WiFi SSID/password, Home Assistant URL and token. Blank fields keep t
 stored in NVM, override `secrets.py`, and the device restarts after saving. If nothing is saved within 15 minutes it
 restarts and tries the normal startup again.
 
+### Crash reports
+
+The device keeps a small record of what it's doing (last step, last error, and why it gave up if it did) in
+`alarm.sleep_memory`. That's RTC RAM rather than flash, so it can be updated constantly without wearing anything out,
+and it survives watchdog resets and `microcontroller.reset()` (but not losing power). On boot, the previous run's record
+plus `microcontroller.cpu.reset_reason` becomes a report that's queued until it can be posted to Home Assistant as
+`sensor.cinnascale_last_reset`, so reports from several resets in a row while offline are delivered once it reconnects.
+
+The sensor's state is the reason and the details are in its attributes, so its history doubles as a crash log:
+
+| State | Meaning |
+| --- | --- |
+| `hang` | The hardware watchdog fired with nothing recorded, i.e. the event loop was stuck. `step` says where. |
+| `no_ha_success` | Nothing got through to Home Assistant for 10 minutes, so the watchdog was left to reset the board. |
+| `exception` | An unhandled exception; the traceback is in `fatal_detail`. |
+| `safe_mode` | CircuitPython went into safe mode (`safe_mode` has the reason), usually after a hard crash. |
+| `manual_restart`, `setup_portal` | The Off button, or leaving setup mode. |
+| `power_on`, `brownout`, ... | Any other reset reason, lowercased. A soft reload shows up as `reload_<run reason>`. |
+
+Attributes include `boot` (resets since power on), `uptime` (seconds into that run), `mem_free`, `step` and `error` (the
+last recoverable error, e.g. a failed post). Older CircuitPython releases (8.x) clear sleep memory on every reset, so
+there you only get the reset reason.
+
 ## Notes
 
 - The scale that I'm using has 3 buttons on it.

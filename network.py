@@ -8,6 +8,7 @@ import socketpool
 import adafruit_requests
 
 import config
+import crashlog
 
 pool: socketpool.SocketPool = None
 requests: adafruit_requests.Session = None
@@ -40,10 +41,11 @@ class BaseCinnaSensor:
     def sensor_name(self):
         return self.sensor_type + "." + self.name
 
-    def update(self, value: int, force: bool = False):
+    def update(self, value: int, force: bool = False) -> bool:
+        """Post the value to Home Assistant.  Returns True if it was posted or didn't need to be."""
         if not force and self.value == value:
             print(f"[{self.sensor_name}] Value ({value}) unchanged, skipping update")
-            return
+            return True
 
         data = {"state": value, "attributes": self.attributes}
 
@@ -53,6 +55,7 @@ class BaseCinnaSensor:
         url = f"{HASS_URL}/api/states/{self.sensor_name}"
 
         global requests, last_success_ns
+        crashlog.step("post " + self.sensor_name)
         try:
             gc.collect()
             with requests.post(url, json=data, headers=self.headers, timeout=5) as response:
@@ -61,14 +64,18 @@ class BaseCinnaSensor:
             # Never let a failed post take down the main loop.  If posts keep failing, the watchdog in main.py will
             # eventually hard reset the device.
             print(f"Update failed: {e!r}")
-            return
+            crashlog.error(f"{self.sensor_name}: {e!r}")
+            return False
 
         if status_code < 200 or status_code >= 300:
             print(f"Unexpected status code {status_code}")
-        else:
-            self.value = value
-            last_success_ns = time.monotonic_ns()
-            print(f"Success! Status: {status_code}")
+            crashlog.error(f"{self.sensor_name}: status {status_code}")
+            return False
+
+        self.value = value
+        last_success_ns = time.monotonic_ns()
+        print(f"Success! Status: {status_code}")
+        return True
 
 
 class CinnaBinarySensor(BaseCinnaSensor):
@@ -108,6 +115,16 @@ class CinnaScaleDevice():
         self.empty_sensor = CinnaBinarySensor(f"{self.SENSOR_NAME}_empty", f"{self.FRIENDLY_NAME} Empty", "battery")
         self.unstable_sensor = CinnaBinarySensor(f"{self.SENSOR_NAME}_unstable", f"{self.FRIENDLY_NAME} Unstable", "vibration")
         self.connection_strength_sensor = CinnaSensor(f"{self.SENSOR_NAME}_connection_strength", f"{self.FRIENDLY_NAME} Connection Strength", "signal_strength", "mdi:wifi")
+        self.last_reset_sensor = CinnaSensor(f"{self.SENSOR_NAME}_last_reset", f"{self.FRIENDLY_NAME} Last Reset", None, "mdi:restart-alert")
+        self._last_reset_attributes = self.last_reset_sensor.attributes
+
+    # Post a report about why the board reset (see crashlog.py).  The state is the reason and the rest of the report
+    # goes in the attributes, so the sensor's history in Home Assistant doubles as a crash log.
+    def record_reset(self, report: dict) -> bool:
+        attributes = dict(self._last_reset_attributes)
+        attributes.update(report)
+        self.last_reset_sensor.attributes = attributes
+        return self.last_reset_sensor.update(report["reason"], True)
 
     # Record the current WIFI signal strength.  We do this separately from the updating of any other sensors because we
     # want to record this whenever possible and avoid potential issues with the scale updated so that we have some data
@@ -166,11 +183,13 @@ async def connect_to_network(max_retries: int = 10) -> bool:
     for attempt in range(1, max_retries + 1):
         try:
             print(f"Connecting to {ssid} (attempt {attempt})... ", end="")
+            crashlog.step("wifi connect")
             wifi.radio.connect(ssid, config.get("password", ""), timeout=10)
             print(f"Connected with ip {wifi.radio.ipv4_address}!")
             return True
         except Exception as e:
             print(f"Failed: {e!r}")
+            crashlog.error(f"wifi: {e!r}")
             await asyncio.sleep(delay)
             delay = min(delay * 2, 30)
 

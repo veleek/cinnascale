@@ -6,6 +6,7 @@ import wifi
 from adafruit_httpserver import Server, Request, Response, GET, POST
 
 import config
+import crashlog
 
 AP_SSID = "CinnaScale-Setup"
 # Reset (and try the normal startup again) if nobody saves anything in this long, so a stray boot into setup mode
@@ -91,4 +92,5 @@ async def run_portal():
     # Give the response a moment to flush before resetting.
     await asyncio.sleep(1)
     print("Leaving setup portal, resetting...")
+    crashlog.fatal("setup_portal", "saved" if saved else "timed out")
     microcontroller.reset()

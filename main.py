@@ -6,6 +6,11 @@ import time
 import traceback
 from watchdog import WatchDogMode
 
+# Start the crash log before anything else so the previous run's record is picked up even if this run fails early.
+import crashlog
+
+crashlog.start()
+
 import config
 import network
 
@@ -56,6 +61,7 @@ async def main():
 
     await blink_n(0.2, 0x000033, 3)
 
+    crashlog.step("init")
     await asyncio.gather(init_network(), init_scale())
 
     await blink_n(0.1, 0x110033, 3)
@@ -84,6 +90,7 @@ async def feed_watchdog():
             wdt.feed()
         else:
             print(f"No successful update for {since_success}s, letting the watchdog reset the board")
+            crashlog.fatal("no_ha_success", f"No successful update for {since_success}s")
         await asyncio.sleep(5)
 
 
@@ -95,12 +102,14 @@ async def watch_buttons():
 
         if not off_button.value:
             print("Manual restart...")
+            crashlog.fatal("manual_restart")
             await blink_n(0.05, 0x226600, 10)
             microcontroller.reset()
 
         if not tare_button.value:
             print("Taring...")
             taring = True
+            crashlog.step("tare")
             await blink_n(0.05, 0x441133, 20)
             # Cheap debounce so we don't tare a whole bunch of times.
             await asyncio.sleep(5)
@@ -123,6 +132,11 @@ async def weigh_once() -> bool:
     await connect_to_network(max_retries=2)
 
     scale_device.record_connection_strength()
+    # Report any earlier resets that we haven't been able to get through to Home Assistant yet.
+    if crashlog.pending():
+        crashlog.report_pending(scale_device.record_reset)
+
+    crashlog.step("weigh")
     success, result = await try_weigh()
     scale_device.record_weight(success, result)
     return success
@@ -144,6 +158,7 @@ async def weigh(trigger_weigh_event: asyncio.Event):
 
         # If we happen to have been triggered right after we completed a report, we'll skip it.
         trigger_weigh_event.clear()
+        crashlog.step("idle")
         await cancellable_sleep(next_delay, trigger_weigh_event)
 
 
@@ -177,6 +192,10 @@ try:
 except Exception as e:
     print("Unhandled exception!  Resetting...")
     traceback.print_exception(e)
+    try:
+        crashlog.fatal("exception", "".join(traceback.format_exception(e)))
+    except Exception:
+        pass
 
     # A hard reset re-initializes the WiFi radio and the NAU7802, unlike supervisor.reload().
     print("Hard resetting...")
