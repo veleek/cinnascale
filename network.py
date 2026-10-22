@@ -1,5 +1,6 @@
 import binascii
 import asyncio
+import os
 import gc
 import time
 import wifi
@@ -145,15 +146,20 @@ class CinnaScaleDevice():
             self.unstable_sensor.update(True)
 
 
-async def init_network() -> bool:
-    wifi.radio.hostname = "CinnaScale"
+# The web workflow connects (and starts mDNS) before this code runs, using CIRCUITPY_WIFI_HOSTNAME from settings.toml,
+# so that is the only place the hostname can be set for both DHCP and mDNS.  Setting it here only matters when this code
+# makes the connection itself.
+HOSTNAME = os.getenv("CIRCUITPY_WIFI_HOSTNAME") or "cinnascale"
 
+
+async def init_network() -> bool:
     if wifi.radio.connected:
         print("Already connected to WiFi {} (RSSI: {})".format(wifi.radio.ap_info.ssid, wifi.radio.ap_info.rssi))
     else:
         mac_address = "f4:12:fa:8d:e9:cc"
         wifi.radio.mac_address = binascii.unhexlify(mac_address.replace(":", ""))
         print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
+        wifi.radio.hostname = HOSTNAME
 
         show_network_strength(config.get("ssid"))
         await connect_to_network()

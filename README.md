@@ -82,6 +82,19 @@ USB, because the USB host owns the filesystem then; use `-Drive` or eject it.
 
   Alternatively, skip `secrets.py` and use setup mode (below).
 
+- Create a `settings.toml` for the web workflow and the device hostname. The web workflow connects to WiFi and starts
+  mDNS before `code.py` runs, so `CIRCUITPY_WIFI_HOSTNAME` is the only way to change the name it shows (the default is
+  `cpy-<board>-<mac>`). This needs CircuitPython 10.3.1 or later.
+
+  ```toml
+  CIRCUITPY_WIFI_SSID = "<WiFi SSID>"
+  CIRCUITPY_WIFI_PASSWORD = "<WiFi Password>"
+  CIRCUITPY_WEB_API_PASSWORD = "<Web workflow password>"
+  CIRCUITPY_WIFI_HOSTNAME = "cinnascale"
+  ```
+
+  The device is then at `http://cinnascale.local/`.
+
 - Copy everything from this folder over to the remote device.
 
 ### Setup mode
